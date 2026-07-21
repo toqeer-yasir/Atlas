@@ -1,0 +1,63 @@
+{
+    "-f": {
+        "description": "Force the operation without confirmation.",
+        "risk": "high"
+    },
+    "--force": {
+        "description": "Force the operation without confirmation.",
+        "risk": "high"
+    },
+
+    "-r": {
+        "description": "Apply the operation recursively.",
+        "risk": "high"
+    },
+    "-R": {
+        "description": "Apply the operation recursively.",
+        "risk": "high"
+    },
+    "--recursive": {
+        "description": "Apply the operation recursively.",
+        "risk": "high"
+    },
+
+    "--hard": {
+        "description": "Permanently discard local changes.",
+        "risk": "critical"
+    },
+
+    "--delete": {
+        "description": "Delete remote or local resources.",
+        "risk": "high"
+    },
+
+    "--purge": {
+        "description": "Completely remove software and its configuration.",
+        "risk": "high"
+    },
+
+    "--no-preserve-root": {
+        "description": "Allow operations affecting the system root directory.",
+        "risk": "critical"
+    },
+
+    "--system": {
+        "description": "Apply the operation to system-wide resources.",
+        "risk": "high"
+    },
+
+    "--privileged": {
+        "description": "Run with elevated privileges.",
+        "risk": "critical"
+    },
+
+    "--volumes": {
+        "description": "Also remove associated storage volumes.",
+        "risk": "high"
+    },
+
+    "--amend": {
+        "description": "Replace the most recent Git commit.",
+        "risk": "medium"
+    }
+}

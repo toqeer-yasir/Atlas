@@ -1,0 +1,184 @@
+{
+
+    "delete": {
+        "description": "Delete files or directories.",
+        "risk": "high"
+    },
+
+    "rm": {
+        "description": "Delete files or directories.",
+        "risk": "high"
+    },
+
+    "move": {
+        "description": "Move or rename files or directories.",
+        "risk": "medium"
+    },
+
+    "mv": {
+        "description": "Move or rename files or directories.",
+        "risk": "medium"
+    },
+
+    "write": {
+        "description": "Write or modify file contents.",
+        "risk": "medium"
+    },
+    
+    "overwrite": {
+        "description": "Overwrite existing file contents.",
+        "risk": "high"
+    },
+
+    "chmod": {
+        "description": "Change file or directory permissions.",
+        "risk": "high"
+    },
+    "chown": {
+        "description": "Change file or directory ownership.",
+        "risk": "high"
+    },
+
+    "install": {
+        "description": "Install software or packages.",
+        "risk": "medium"
+    },
+    "uninstall": {
+        "description": "Remove software or packages.",
+        "risk": "medium"
+    },
+    "upgrade": {
+        "description": "Upgrade installed software or packages.",
+        "risk": "medium"
+    },
+
+    "run": {
+        "description": "Run a program or script.",
+        "risk": "high"
+    },
+    "execute": {
+        "description": "Execute a command or binary.",
+        "risk": "high"
+    },
+
+    "upload": {
+        "description": "Upload data to a remote system.",
+        "risk": "high"
+    },
+    "connect": {
+        "description": "Connect to a remote system.",
+        "risk": "high"
+    },
+
+    "push": {
+        "description": "Push local changes to a remote repository.",
+        "risk": "high"
+    },
+    "pull": {
+        "description": "Pull changes from a remote repository.",
+        "risk": "medium"
+    },
+    "merge": {
+        "description": "Merge changes into the current branch.",
+        "risk": "medium"
+    },
+    "rebase": {
+        "description": "Rewrite commit history using rebase.",
+        "risk": "high"
+    },
+    "reset": {
+        "description": "Reset commits or working tree changes.",
+        "risk": "high"
+    },
+    "checkout": {
+        "description": "Switch branches or restore files.",
+        "risk": "medium"
+    },
+    "switch": {
+        "description": "Switch to another Git branch.",
+        "risk": "medium"
+    },
+    "clean": {
+        "description": "Delete untracked files from the repository.",
+        "risk": "high"
+    },
+
+    "stop": {
+        "description": "Stop a service or process.",
+        "risk": "high"
+    },
+    "restart": {
+        "description": "Restart a service or the system.",
+        "risk": "high"
+    },
+    "enable": {
+        "description": "Enable a service to start automatically.",
+        "risk": "medium"
+    },
+    "disable": {
+        "description": "Disable a service from starting automatically.",
+        "risk": "medium"
+    },
+    "kill": {
+        "description": "Terminate running processes.",
+        "risk": "high"
+    },
+
+    "shutdown": {
+        "description": "Shut down the system.",
+        "risk": "critical"
+    },
+    "reboot": {
+        "description": "Restart the system.",
+        "risk": "critical"
+    },
+
+    "adduser": {
+        "description": "Create a user account.",
+        "risk": "critical"
+    },
+    "deluser": {
+        "description": "Delete a user account.",
+        "risk": "critical"
+    },
+    "modifyuser": {
+        "description": "Modify a user account.",
+        "risk": "critical"
+    },
+    "passwd": {
+        "description": "Change a user's password.",
+        "risk": "critical"
+    },
+
+    "schedule": {
+        "description": "Create or modify scheduled tasks.",
+        "risk": "high"
+    },
+
+    "mount": {
+        "description": "Mount a filesystem.",
+        "risk": "high"
+    },
+    "unmount": {
+        "description": "Unmount a filesystem.",
+        "risk": "high"
+    },
+    "format": {
+        "description": "Format a storage device or filesystem.",
+        "risk": "critical"
+    },
+    "partition": {
+        "description": "Modify disk partitions.",
+        "risk": "critical"
+    },
+
+    "deploy": {
+        "description": "Deploy an application or service.",
+        "risk": "high"
+    },
+
+    "unknown": {
+        "description": "Execute an unrecognized shell operation.",
+        "risk": "high"
+    }
+}
