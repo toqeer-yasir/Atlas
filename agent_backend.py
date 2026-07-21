@@ -75,12 +75,10 @@ def build_datetime_system_message() -> SystemMessage:
     now_pkt = datetime.now(PKT)
     return SystemMessage(
         content=(
-            f"Current date and time (Pakistan Standard Time, UTC+5): "
-            f"{now_pkt.strftime('%Y-%m-%d %H:%M:%S')} ({now_pkt.strftime('%A')}).\n"
-            "All users are in Pakistan. When the user asks to schedule something using "
-            "relative or local time (e.g. 'in 2 hours', 'tomorrow at 9am'), interpret it "
-            "as Pakistan Standard Time (UTC+5) and convert it into an absolute ISO 8601 "
-            "timestamp with the +05:00 offset before passing it to the scheduling tool."
+            f"Now: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')} PKT ({now_pkt.strftime('%A')}), UTC+5. "
+            "Interpret relative/local times in PKT and convert to ISO 8601 with +05:00 offset for scheduling.\n"
+            "When summarizing tool output (diffs, logs, shell results) in your reply, describe it in plain "
+            "prose — never paste the raw output verbatim. Reserve code blocks for actual code/commands only."
         )
     )
 
