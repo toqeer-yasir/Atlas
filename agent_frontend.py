@@ -24,7 +24,6 @@ st.markdown(
 
 
 # session state
-
 if "user" not in st.session_state:
     st.session_state.user = None
 
@@ -345,7 +344,6 @@ THREAD_ID = st.session_state.thread_id
 
 
 # sidebar: chat history
-
 with st.sidebar:
     st.markdown("### Chats")
 
@@ -355,7 +353,6 @@ with st.sidebar:
 
     st.session_state.threads_and_titles = fetch_threads_and_titles()
 
-    #-------------------------------------------
     # rag documents
     st.markdown("### Upload a document")
 
@@ -407,7 +404,6 @@ with st.sidebar:
 
 
 # websocket streaming
-
 async def stream_turn(payload: dict, placeholder):
     assistant_response = ""
 
@@ -423,24 +419,22 @@ async def stream_turn(payload: dict, placeholder):
 
             elif data["type"] == "interrupt":
                 placeholder.markdown(assistant_response or "_Waiting for your approval..._")
-                return assistant_response, data["content"]
+                return assistant_response, data["content"], None
 
             elif data["type"] == "completed":
                 placeholder.markdown(assistant_response)
-                return assistant_response, None
+                return assistant_response, None, None
 
             elif data["type"] == "error":
-                            placeholder.markdown(f"⚠️ {data['content']}")
+                placeholder.markdown(f"⚠️ {data['content']}")
+                error_info = {
+                    "content": data["content"],
+                    "debug": data.get("debug"),
+                    "category": data.get("category"),
+                }
+                return assistant_response, None, error_info
 
-                            debug_detail = data.get("debug")
-                            category = data.get("category")
-                            if debug_detail:
-                                with st.expander(f"🔧 Debug details ({category})"):
-                                    st.code(debug_detail, language="text")
-
-                            return assistant_response, None
-                            
-    return assistant_response, None
+    return assistant_response, None, None
 
 
 def run_turn_and_store(payload: dict, user_content: str | None = None):
@@ -448,7 +442,7 @@ def run_turn_and_store(payload: dict, user_content: str | None = None):
         with st.chat_message("assistant"):
             placeholder = st.empty()
             placeholder.markdown("_Thinking..._")
-            assistant_response, interrupt_content = asyncio.run(
+            assistant_response, interrupt_content, error_info = asyncio.run(
                 stream_turn(payload, placeholder)
             )
     except Exception as e:
@@ -460,8 +454,12 @@ def run_turn_and_store(payload: dict, user_content: str | None = None):
             {"role": "assistant", "content": assistant_response}
         )
 
-    # only persist to the DB once the turn is fully done (no pending approval)
-    if not interrupt_content and assistant_response and user_content:
+    if error_info:
+        st.session_state.messages_history.append(
+            {"role": "error", "content": error_info["content"], "debug": error_info.get("debug"), "category": error_info.get("category")}
+        )
+
+    if not interrupt_content and not error_info and assistant_response and user_content:
         push_message(
             user_id=USER_ID,
             message_id=generate_uuid4(),
@@ -473,16 +471,20 @@ def run_turn_and_store(payload: dict, user_content: str | None = None):
     st.session_state.pending_interrupt = interrupt_content
     st.rerun()
 
-
-# render existing conversation
-
+#rendering existing conversation
 for turn in st.session_state.messages_history:
-    with st.chat_message(turn["role"]):
-        st.write(turn["content"])
+    if turn["role"] == "error":
+        with st.chat_message("assistant"):
+            st.markdown(f"⚠️ {turn['content']}")
+            if turn.get("debug"):
+                with st.expander(f"🔧 Debug details ({turn.get('category')})"):
+                    st.code(turn["debug"], language="text")
+    else:
+        with st.chat_message(turn["role"]):
+            st.write(turn["content"])
 
 
 # pending tool approval UI
-
 if st.session_state.pending_interrupt:
     tools = st.session_state.pending_interrupt.get("tools", [])
 
@@ -515,9 +517,7 @@ if st.session_state.pending_interrupt:
             run_turn_and_store(payload, user_content=None)
 
 
-# ---------------------------------------------------------------------------
 # chat input
-# ---------------------------------------------------------------------------
 message = st.chat_input(
     placeholder="Type here . . .",
     disabled=bool(st.session_state.pending_interrupt),
