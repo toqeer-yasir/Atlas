@@ -13,8 +13,10 @@ from uuid import UUID, uuid4
 
 from pwdlib import PasswordHash
 
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage, SystemMessage
+from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk, HumanMessage, ToolMessage, SystemMessage
 from langchain_openrouter import ChatOpenRouter
+
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import add_messages
@@ -248,11 +250,17 @@ async def lifespan(app: FastAPI):
     checkpointer = AsyncPostgresSaver(pool)
     await checkpointer.setup()
 
-    model = ChatOpenRouter(
-        model="nvidia/nemotron-3-nano-30b-a3b:free",
-        api_key=OPENROUTER_API_KEY,
-        streaming=True,
-        temperature=0.7,
+    # model = ChatOpenRouter(
+    #     model="nvidia/nemotron-3-nano-30b-a3b:free",
+    #     api_key=OPENROUTER_API_KEY,
+    #     streaming=True,
+    #     temperature=0.7,
+    # )
+
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-flash-latest",
+        google_api_key=os.getenv("GEMINI_API_KEY")
     )
 
     tools, mcp_client = await get_tools()
@@ -323,6 +331,34 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def extract_text(content) -> str:
+    """Normalizing langgrpah message content from any provider(llm api)."""
+
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+
+            elif isinstance(item, dict):
+                if item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+
+            else:
+                parts.append(str(item))
+
+        return "".join(parts)
+
+    return str(content)
+
+
 async def stream_graph_run(websocket: WebSocket, graph, run_input, config, context):
 
     async for mode, data in graph.astream(
@@ -332,12 +368,17 @@ async def stream_graph_run(websocket: WebSocket, graph, run_input, config, conte
         stream_mode=["messages", "updates"],
     ):
         if mode == "messages":
-            message_chunk, _metadata = data
-            if isinstance(message_chunk, AIMessage) and message_chunk.content:
-                await websocket.send_json({
-                    "type": "content",
-                    "content": message_chunk.content,
-                })
+            message_chunk, metadata = data
+
+            text = extract_text(message_chunk.content)
+
+            if text:
+                await websocket.send_json(
+                    {
+                        "type": "content",
+                        "content": text,
+                    }
+                )
 
         elif mode == "updates":
             for node_name, node_update in data.items():
