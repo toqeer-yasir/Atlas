@@ -1,7 +1,6 @@
-chroma_db/
-*chroma_db/*
-*.pdf
-test_email.py
+__pycache__
 __pycache__/
-*__pycache__/*
+chroma_db
+chroma_db/
 .env
+*.pdf
