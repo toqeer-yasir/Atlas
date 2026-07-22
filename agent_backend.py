@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 from pwdlib import PasswordHash
 
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessageChunk, ToolMessage, SystemMessage
 from langchain_openrouter import ChatOpenRouter
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -80,11 +80,10 @@ def build_datetime_system_message() -> SystemMessage:
         content=(
             f"Now: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')} PKT ({now_pkt.strftime('%A')}), UTC+5. "
             "Convert relative/local times to ISO 8601 with +05:00 offset for scheduling.\n"
-            "Never paste raw tool output verbatim (diffs, logs, shell, JSON/API data) — always "
-            "summarize it in plain prose. Code blocks are for actual code/commands only."
+            "When showing times to the user, use 12-hour format with AM/PM, no seconds (e.g. 3:32 PM)."
         )
     )
-    
+        
 
 def create_chat_node(model_with_tools):
 
@@ -227,74 +226,6 @@ def build_graph(model_with_tools, tools, checkpointer, RISK_BY_COMMAND, RISK_BY_
     return builder.compile(checkpointer=checkpointer)
 
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     print("Starting server...")
-
-#     RISK_BY_COMMAND = json.load(open("./approval_actions.json"))
-#     RISK_BY_FLAG = json.load(open("./dangerous_flags.json"))
-
-#     pool = AsyncConnectionPool(
-#         DATABASE_URL,
-#         min_size=4,
-#         max_size=10,
-#         open=False,
-#         kwargs={
-#             "autocommit": True,
-#             "prepare_threshold": 0,
-#             "row_factory": dict_row,
-#         },
-#     )
-
-#     await pool.open()
-
-#     checkpointer = AsyncPostgresSaver(pool)
-#     await checkpointer.setup()
-
-#     # model = ChatOpenRouter(
-#     #     model="nvidia/nemotron-3-nano-30b-a3b:free",
-#     #     api_key=OPENROUTER_API_KEY,
-#     #     streaming=True,
-#     #     temperature=0.7,
-#     # )
-
-
-#     model = ChatGoogleGenerativeAI(
-#         model="gemini-flash-latest",
-#         google_api_key=os.getenv("GEMINI_API_KEY")
-#     )
-
-#     tools, mcp_client = await get_tools()
-#     print(f"Tools Received: {len(tools)}")
-
-#     model_with_tools = model.bind_tools(tools)
-
-#     graph = build_graph(
-#         model_with_tools=model_with_tools,
-#         tools=tools,
-#         checkpointer=checkpointer,
-#         RISK_BY_COMMAND=RISK_BY_COMMAND,
-#         RISK_BY_FLAG=RISK_BY_FLAG,
-#     )
-
-#     rag = Rag()
-
-#     app.state.pool = pool
-#     app.state.graph = graph
-#     app.state.model = model
-#     app.state.tools = tools
-#     app.state.mcp_client = mcp_client
-#     app.state.rag = rag
-
-#     yield
-
-#     print("Stopping server...")
-#     await pool.close()
-
-#     if hasattr(app.state, "mcp_client"):
-#         await app.state.mcp_client.aclose()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting server...")
@@ -319,17 +250,17 @@ async def lifespan(app: FastAPI):
     checkpointer = AsyncPostgresSaver(pool)
     await checkpointer.setup()
 
-#     model = ChatOpenRouter(
-#     model="nvidia/nemotron-3-nano-30b-a3b:free",
-#     api_key=OPENROUTER_API_KEY,
-#     streaming=True,
-#     temperature=0.7,
-#     )
-
-    model = ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",
-        google_api_key=os.getenv("GEMINI_API_KEY")
+    model = ChatOpenRouter(
+    model="nvidia/nemotron-3-nano-30b-a3b:free",
+    api_key=OPENROUTER_API_KEY,
+    streaming=True,
+    temperature=0.7,
     )
+
+    # model = ChatGoogleGenerativeAI(
+    #     model="gemini-flash-latest",
+    #     google_api_key=os.getenv("GEMINI_API_KEY")
+    # )
 
     tools, mcp_client = await get_tools()
     print(f"Tools Received: {len(tools)}")
@@ -542,15 +473,13 @@ async def stream_graph_run(websocket: WebSocket, graph, run_input, config, conte
         if mode == "messages":
             message_chunk, metadata = data
 
-            text = extract_text(message_chunk.content)
-
-            if text:
-                await websocket.send_json(
-                    {
+            if isinstance(message_chunk, AIMessageChunk):
+                text = extract_text(message_chunk.content)
+                if text:
+                    await websocket.send_json({
                         "type": "content",
                         "content": text,
-                    }
-                )
+                    })
 
         elif mode == "updates":
             for node_name, node_update in data.items():
