@@ -174,7 +174,9 @@ def send_email(
         to_email: The recipient's email address. Always ask the user for this
             explicitly if they haven't specified who to send it to.
         subject: The email subject line.
-        body: The plain-text body of the email.
+        body: Plain text only — no Markdown (no **, ##, backticks, * bullets),
+            since the email client won't render it. Use line breaks, dashes,
+            and capitalization for structure instead.
         attachment_content: Optional plain-text content to attach as a file
             (e.g. a generated summary). Do not use for binary files.
         attachment_filename: Filename for the attachment, required if
