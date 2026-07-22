@@ -3,6 +3,8 @@ import json
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import asyncio
+
 from pydantic import BaseModel, EmailStr
 
 from dotenv import load_dotenv
@@ -13,7 +15,7 @@ from uuid import UUID, uuid4
 
 from pwdlib import PasswordHash
 
-from langchain_core.messages import BaseMessage, AIMessage, AIMessageChunk, HumanMessage, ToolMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, SystemMessage
 from langchain_openrouter import ChatOpenRouter
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -46,7 +48,8 @@ from db import (
     users,
     chats,
     messages,
-    documents
+    documents,
+    tasks as tasks_db
 )
 
 from error_handling import classify_error
@@ -76,12 +79,12 @@ def build_datetime_system_message() -> SystemMessage:
     return SystemMessage(
         content=(
             f"Now: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')} PKT ({now_pkt.strftime('%A')}), UTC+5. "
-            "Interpret relative/local times in PKT and convert to ISO 8601 with +05:00 offset for scheduling.\n"
-            "When summarizing tool output (diffs, logs, shell results) in your reply, describe it in plain "
-            "prose — never paste the raw output verbatim. Reserve code blocks for actual code/commands only."
+            "Convert relative/local times to ISO 8601 with +05:00 offset for scheduling.\n"
+            "Never paste raw tool output verbatim (diffs, logs, shell, JSON/API data) — always "
+            "summarize it in plain prose. Code blocks are for actual code/commands only."
         )
     )
-
+    
 
 def create_chat_node(model_with_tools):
 
@@ -224,6 +227,74 @@ def build_graph(model_with_tools, tools, checkpointer, RISK_BY_COMMAND, RISK_BY_
     return builder.compile(checkpointer=checkpointer)
 
 
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     print("Starting server...")
+
+#     RISK_BY_COMMAND = json.load(open("./approval_actions.json"))
+#     RISK_BY_FLAG = json.load(open("./dangerous_flags.json"))
+
+#     pool = AsyncConnectionPool(
+#         DATABASE_URL,
+#         min_size=4,
+#         max_size=10,
+#         open=False,
+#         kwargs={
+#             "autocommit": True,
+#             "prepare_threshold": 0,
+#             "row_factory": dict_row,
+#         },
+#     )
+
+#     await pool.open()
+
+#     checkpointer = AsyncPostgresSaver(pool)
+#     await checkpointer.setup()
+
+#     # model = ChatOpenRouter(
+#     #     model="nvidia/nemotron-3-nano-30b-a3b:free",
+#     #     api_key=OPENROUTER_API_KEY,
+#     #     streaming=True,
+#     #     temperature=0.7,
+#     # )
+
+
+#     model = ChatGoogleGenerativeAI(
+#         model="gemini-flash-latest",
+#         google_api_key=os.getenv("GEMINI_API_KEY")
+#     )
+
+#     tools, mcp_client = await get_tools()
+#     print(f"Tools Received: {len(tools)}")
+
+#     model_with_tools = model.bind_tools(tools)
+
+#     graph = build_graph(
+#         model_with_tools=model_with_tools,
+#         tools=tools,
+#         checkpointer=checkpointer,
+#         RISK_BY_COMMAND=RISK_BY_COMMAND,
+#         RISK_BY_FLAG=RISK_BY_FLAG,
+#     )
+
+#     rag = Rag()
+
+#     app.state.pool = pool
+#     app.state.graph = graph
+#     app.state.model = model
+#     app.state.tools = tools
+#     app.state.mcp_client = mcp_client
+#     app.state.rag = rag
+
+#     yield
+
+#     print("Stopping server...")
+#     await pool.close()
+
+#     if hasattr(app.state, "mcp_client"):
+#         await app.state.mcp_client.aclose()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting server...")
@@ -248,13 +319,12 @@ async def lifespan(app: FastAPI):
     checkpointer = AsyncPostgresSaver(pool)
     await checkpointer.setup()
 
-    # model = ChatOpenRouter(
-    #     model="nvidia/nemotron-3-nano-30b-a3b:free",
-    #     api_key=OPENROUTER_API_KEY,
-    #     streaming=True,
-    #     temperature=0.7,
-    # )
-
+#     model = ChatOpenRouter(
+#     model="nvidia/nemotron-3-nano-30b-a3b:free",
+#     api_key=OPENROUTER_API_KEY,
+#     streaming=True,
+#     temperature=0.7,
+#     )
 
     model = ChatGoogleGenerativeAI(
         model="gemini-flash-latest",
@@ -283,9 +353,21 @@ async def lifespan(app: FastAPI):
     app.state.mcp_client = mcp_client
     app.state.rag = rag
 
+    poller_task = asyncio.create_task(poll_and_run_tasks(pool, graph, rag))
+    app.state.poller_task = poller_task
+    print("Task poller started.")
+
     yield
 
     print("Stopping server...")
+
+    poller_task.cancel()
+    try:
+        await poller_task
+    except asyncio.CancelledError:
+        pass
+    print("Task poller stopped.")
+
     await pool.close()
 
     if hasattr(app.state, "mcp_client"):
@@ -355,6 +437,98 @@ def extract_text(content) -> str:
         return "".join(parts)
 
     return str(content)
+
+
+def get_auto_rejected_tool_ids(interrupt_payload: dict) -> list[str]:
+    """
+    For unattended (scheduled) task runs: auto-deny any tool call whose
+    risk levels include 'high' or 'critical'. Tools with only 'medium'
+    risk are allowed to proceed without human approval.
+    """
+    rejected_ids = []
+    for tool in interrupt_payload.get("tools", []):
+        risk_levels = tool.get("risk_levels", [])
+        if any(level in ("high", "critical") for level in risk_levels):
+            rejected_ids.append(tool["id"])
+    return rejected_ids
+
+
+async def run_scheduled_task(graph, task: dict, pool, rag) -> str:
+    thread_id = str(task["chat_id"])
+    user_id = str(task["user_id"])
+
+    config = {"configurable": {"thread_id": thread_id}}
+    context = {
+        "user_id": user_id,
+        "thread_id": thread_id,
+        "rag": rag,
+        "pool": pool,
+    }
+
+    trigger_text = task.get("task_description") or "Run the scheduled task."
+    payload = task.get("task_payload") or {}
+    if payload:
+        trigger_text += f"\n\nTask details: {json.dumps(payload)}"
+
+    run_input = {"messages": [HumanMessage(content=trigger_text)]}
+
+    result = await graph.ainvoke(run_input, config=config, context=context)
+
+    while "__interrupt__" in result:
+        interrupt_obj = result["__interrupt__"][0]
+        rejected_ids = get_auto_rejected_tool_ids(interrupt_obj.value)
+
+        result = await graph.ainvoke(
+            Command(resume={"rejected_tool_ids": rejected_ids}),
+            config=config,
+            context=context,
+        )
+
+    final_message = result["messages"][-1]
+    return extract_text(final_message.content)
+
+
+POLL_INTERVAL_SECONDS = 30
+
+
+async def poll_and_run_tasks(pool, graph, rag):
+    """
+    Background loop: runs forever, checking for due scheduled tasks every
+    POLL_INTERVAL_SECONDS and executing them one at a time.
+    Errors in a single task are isolated — they don't kill the loop.
+    """
+    while True:
+        try:
+            due_tasks = await tasks_db.get_due_tasks(pool, datetime.now(timezone.utc))
+
+            for task in due_tasks:
+                task_id = task["task_id"]
+
+                await tasks_db.update_task_status(pool, task_id, "running")
+
+                try:
+                    result_text = await run_scheduled_task(graph, task, pool, rag)
+
+                    await messages.create_message(
+                        pool=pool,
+                        message_id=uuid4(),
+                        chat_id=task["chat_id"],
+                        user_content=f"[Scheduled task] {task['task_description']}",
+                        assistant_content=result_text,
+                    )
+
+                    await tasks_db.update_task_status(pool, task_id, "completed")
+
+                except Exception as e:
+                    print(f"[poller] Task {task_id} failed: {e}")
+                    await tasks_db.update_task_status(
+                        pool, task_id, "failed", error_message=str(e)
+                    )
+
+        except Exception as e:
+            print(f"[poller] Error during poll cycle: {e}")
+
+        await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 
 async def stream_graph_run(websocket: WebSocket, graph, run_input, config, context):
